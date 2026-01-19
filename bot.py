@@ -9,6 +9,7 @@ from meme_downloader import download_meme
 from meme_sender import send_meme
 from steganography import decode
 from crypto import decrypt_message
+import inbox
 
 load_dotenv()
 
@@ -81,9 +82,20 @@ async def on_message(message):
             # Decode and decrypt immediately
             try:
                 encoded_message = decode(save_path)
-                decrypted_message = decrypt_message(bytes.fromhex(encoded_message))
+                decrypted_message = decrypt_message(encoded_message)
+                # Expect format: "NAME: message"
+                if ":" in decrypted_message:
+                    author, message_text = decrypted_message.split(":", 1)
+                    author = author.strip()
+                    message_text = message_text.strip()
+                else:
+                    author = "UNKNOWN"
+                    message_text = decrypted_message.strip()
+
+                inbox.msg_coming({"author": author,"filename": attachment.filename,"message": message_text})
+
                 print(f"[{attachment.filename}] Decoded & decrypted message: {decrypted_message}")
-                os.remove(save_path)
+                os.remove(save_path)    
             except Exception as e:
                 print(f"[{attachment.filename}] Failed to decode/decrypt: {e}")
 

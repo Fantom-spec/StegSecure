@@ -1,67 +1,50 @@
 from PIL import Image
 
-END_MARKER = "<<<END>>>"
+END_MARKER = b"<<<END>>>"
 
-def text_to_binary(text):
-    return ''.join(format(ord(c), '08b') for c in text)
+def encode(image_path, output_path, data_bytes: bytes):
+    """Embed bytes into an image using LSB steganography."""
+    data_bytes += END_MARKER
+    binary_secret = ''.join(format(b, "08b") for b in data_bytes)
 
-def binary_to_text(binary):
-    chars = [binary[i:i+8] for i in range(0, len(binary), 8)]
-    text = ""
-    for c in chars:
-        text += chr(int(c, 2))
-        if text.endswith(END_MARKER):
-            return text.replace(END_MARKER, "")
-    return text
-
-# Encode function now works with any string (hex included)
-def encode(image_path, output_path, secret_text):
-    # append marker
-    secret_text += END_MARKER
-    # convert to binary
-    binary_secret = text_to_binary(secret_text)
-
-    img = Image.open(image_path)
-    img = img.convert("RGB")
+    img = Image.open(image_path).convert("RGB")
     pixels = list(img.getdata())
 
     if len(binary_secret) > len(pixels) * 3:
-        raise ValueError("Text too large to hide in this image")
+        raise ValueError("Data too large to hide in image")
 
     new_pixels = []
     bit_index = 0
 
-    for pixel in pixels:
-        r, g, b = pixel
-        if bit_index < len(binary_secret):
-            r = (r & ~1) | int(binary_secret[bit_index])
-            bit_index += 1
-        if bit_index < len(binary_secret):
-            g = (g & ~1) | int(binary_secret[bit_index])
-            bit_index += 1
-        if bit_index < len(binary_secret):
-            b = (b & ~1) | int(binary_secret[bit_index])
-            bit_index += 1
-        new_pixels.append((r, g, b))
+    for r, g, b in pixels:
+        r_new = (r & ~1) | int(binary_secret[bit_index]) if bit_index < len(binary_secret) else r
+        bit_index += 1 if bit_index < len(binary_secret) else 0
+
+        g_new = (g & ~1) | int(binary_secret[bit_index]) if bit_index < len(binary_secret) else g
+        bit_index += 1 if bit_index < len(binary_secret) else 0
+
+        b_new = (b & ~1) | int(binary_secret[bit_index]) if bit_index < len(binary_secret) else b
+        bit_index += 1 if bit_index < len(binary_secret) else 0
+
+        new_pixels.append((r_new, g_new, b_new))
 
     img.putdata(new_pixels)
     img.save(output_path)
-    print("Encrypted text hidden successfully")
 
-def decode(image_path):
-    img = Image.open(image_path)
+def decode(image_path) -> bytes:
+    """Extract bytes hidden in image."""
+    img = Image.open(image_path).convert("RGB")
     pixels = list(img.getdata())
 
     binary_data = ""
     for pixel in pixels:
-        for value in pixel:
-            binary_data += str(value & 1)
+        for val in pixel:
+            binary_data += str(val & 1)
 
-    secret = binary_to_text(binary_data)
-    return secret
-
-# ===== Example Usage =====
-# Suppose you have a hex string representing encrypted data
-# encrypted_hex = "a3f5b2c1d4e6"  # replace with your actual encrypted hex
-# encode("input.png", "input.png", encrypted_hex)
-#decode(r"memes\\1080ca91-2ebe-4d06-b760-33d49e60eb23.png")
+    bytes_list = []
+    for i in range(0, len(binary_data), 8):
+        byte = int(binary_data[i:i+8], 2)
+        bytes_list.append(byte)
+        if bytes(bytes_list[-len(END_MARKER):]) == END_MARKER:
+            return bytes(bytes_list[:-len(END_MARKER)])
+    return bytes(bytes_list)
